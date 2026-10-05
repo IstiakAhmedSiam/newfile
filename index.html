@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Four-Stroke Engine Simulation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F4F7FA; --panel:#FFFFFF; --line:#DCE3E8; --ink:#16222A; --soft:#56676C; --faint:#8B9A9D;
+    --c-int:#2679A6; --c-comp:#C77D12; --c-pow:#D8492F; --c-exh:#7A5BB5;
+    --t-int:#E3EFF6; --t-comp:#FBF0DD; --t-pow:#FCE6E0; --t-exh:#EEE8F7;
+    --go:#1E9E63; --warn:#E39B10; --radius:14px;
+    --intake:#2679A6; --intake-soft:#E3EFF4; --compress:#C77D12; --power:#D8492F; --power-soft:#FBE9E3; --exhaust:#7A5BB5;
+    --ink-soft:#56676C; --ink-faint:#8B9A9D; --panel-line:#DCE3E8; --grid:#D4DBDB; --bg-2:#EEF2F5;
+  }
+  :root:not([data-theme="light"]){ /* page is locked to light */ }
+  :root[data-theme="dark"]{ --bg:#0F1416; --panel:#1A2225; --ink:#E7EEEE; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{ background:var(--bg); color:var(--ink); font-family:'Space Grotesk',system-ui,sans-serif; font-size:17px; line-height:1.4;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); -webkit-tap-highlight-color:transparent; }
+  .mono{ font-family:'IBM Plex Mono',ui-monospace,monospace; }
+  .page[hidden]{ display:none !important; }
+  .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+
+  /* ---------- top tabs ---------- */
+  .tabs{ position:sticky; top:0; z-index:20; display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; padding:8px 10px;
+    background:var(--bg); border-bottom:1px solid var(--line); }
+  .tabs[hidden]{ display:none; }
+  .tab{ font-family:inherit; font-size:16px; font-weight:700; min-height:40px; border-radius:12px; border:2px solid var(--line);
+    background:var(--panel); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
+  .tab .ic{ font-size:18px; line-height:1; }
+  .tab[aria-selected="true"]{ background:var(--ink); border-color:var(--ink); color:#fff; }
+  .tab.finish{ color:var(--c-pow); border-color:#F2C3B8; }
+  .tab.finish[aria-selected="true"]{ background:var(--c-pow); border-color:var(--c-pow); color:#fff; }
+
+  /* ---------- simulation layout ---------- */
+  .wrap{ max-width:1180px; margin:0 auto; padding:8px 10px 20px; }
+  .sim-grid{ display:flex; flex-direction:column; gap:8px; }
+  .right-col{ display:flex; flex-direction:column; gap:8px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; box-shadow:0 1px 3px rgba(22,34,42,0.06); }
+
+  .stroke-bar{ display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-bottom:6px; }
+  .seg{ border-radius:9px; padding:5px 2px; text-align:center; font-size:12.5px; font-weight:700; line-height:1.15; transition:background .15s, color .15s, transform .15s; }
+  .seg small{ display:block; font-size:10.5px; font-weight:500; opacity:0.8; }
+  .seg.s0{ background:var(--t-int); color:var(--c-int); } .seg.s1{ background:var(--t-comp); color:var(--c-comp); }
+  .seg.s2{ background:var(--t-pow); color:var(--c-pow); } .seg.s3{ background:var(--t-exh); color:var(--c-exh); }
+  .seg.on{ color:#fff; transform:scale(1.04); box-shadow:0 2px 6px rgba(22,34,42,0.18); }
+  .seg.s0.on{ background:var(--c-int); } .seg.s1.on{ background:var(--c-comp); } .seg.s2.on{ background:var(--c-pow); } .seg.s3.on{ background:var(--c-exh); }
+
+  .meta-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+  .angle-pill{ background:var(--ink); color:#fff; border-radius:999px; padding:4px 12px; font-size:15px; font-weight:600; }
+  .chips{ display:flex; gap:6px; }
+  .chip{ border-radius:999px; padding:3px 10px; font-size:13px; font-weight:700; border:2px solid var(--line); color:var(--faint); background:#fff; }
+  .chip.in.open{ background:var(--c-int); border-color:var(--c-int); color:#fff; }
+  .chip.ex.open{ background:#C23B3B; border-color:#C23B3B; color:#fff; }
+
+  .engine-stage{ display:block; margin:0 auto; height:clamp(180px, 28vh, 460px); width:auto; max-width:100%; }
+  .ts-head{ font-size:14px; font-weight:700; color:var(--soft); margin:0 0 2px; display:flex; align-items:center; gap:6px; }
+  .ts-head .sw{ width:10px; height:10px; border-radius:3px; background:var(--c-pow); }
+  .ts-stage{ display:block; margin:0 auto; height:clamp(120px, 19vh, 330px); width:auto; max-width:100%; }
+  .ts-caption{ font-size:13.5px; text-align:center; border-radius:10px; padding:6px 8px; min-height:2.8em; border:1.5px solid var(--line); background:#F3F6F7; }
+  .ts-caption b{ font-family:'IBM Plex Mono',monospace; }
+  .ts-caption.phold{ background:#F1F4F5; border-color:#D5DDE0; }
+  .ts-caption.p12{ background:var(--t-comp); border-color:#EBCB95; }
+  .ts-caption.p23{ background:#FFE9D6; border-color:#F5B98A; }
+  .ts-caption.p34{ background:var(--t-pow); border-color:#F0AE9F; }
+  .ts-caption.p41{ background:var(--t-exh); border-color:#C8B9E6; }
+
+  /* ---------- controls ---------- */
+  .controls{ display:flex; flex-direction:column; gap:8px; }
+  .ctrl-block[hidden]{ display:none; }
+  .hint{ display:flex; align-items:center; gap:10px; font-size:14.5px; font-weight:500; background:var(--t-int); color:#164B68; border-radius:12px; padding:8px 12px; }
+  .hint .big{ font-size:30px; line-height:1; }
+  .ctrl-label{ display:flex; justify-content:space-between; align-items:baseline; font-size:15px; font-weight:700; }
+  .ctrl-label .val{ color:var(--c-pow); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:14px; border-radius:8px; background:#D9E2E8; outline:none; margin:10px 0 2px; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:34px; height:34px; border-radius:50%; background:var(--c-int); border:4px solid #fff; box-shadow:0 0 0 2px var(--c-int), 0 2px 6px rgba(0,0,0,0.25); cursor:pointer; }
+  input[type=range]::-moz-range-thumb{ width:30px; height:30px; border-radius:50%; background:var(--c-int); border:4px solid #fff; box-shadow:0 0 0 2px var(--c-int); cursor:pointer; }
+  #animSpeed{ height:10px; }
+  #animSpeed::-webkit-slider-thumb{ width:26px; height:26px; background:var(--ink); box-shadow:0 0 0 2px var(--ink); }
+  .ticks{ display:flex; justify-content:space-between; font-size:12px; font-weight:600; color:var(--soft); padding:0 6px; }
+  .btn-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .btn{ font-family:inherit; font-size:18px; font-weight:700; min-height:50px; padding:0 18px; border-radius:12px; border:none; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px; color:#fff; box-shadow:0 2px 0 rgba(0,0,0,0.15); }
+  .btn:active{ transform:translateY(1px); box-shadow:none; }
+  .btn-play{ background:var(--go); flex:1.3; } .btn-play.is-playing{ background:var(--warn); }
+  .btn-step{ background:var(--c-int); flex:1; }
+  .btn-reset{ background:#E8EDF0; color:var(--ink); flex:0 0 auto; }
+  .btn-reset.small{ min-height:40px; font-size:15px; padding:0 12px; }
+  .row-flex{ display:flex; align-items:center; gap:8px; } .row-flex > .grow{ flex:1; }
+  #resetRow:empty{ display:none; }
+  .btn-primary{ background:var(--c-int); width:100%; font-size:20px; min-height:56px; }
+  .btn-danger{ background:var(--c-pow); }
+  .btn-ghost{ background:#E8EDF0; color:var(--ink); }
+  @keyframes pulse { 0%{ transform:scale(1); opacity:1; } 50%{ transform:scale(1.35); opacity:0.55; } 100%{ transform:scale(1); opacity:1; } }
+  #pinHandle.pulse{ animation:pulse 1.3s ease-in-out infinite; transform-box:fill-box; transform-origin:center; }
+  body.drag-mode #engineSvg{ touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; }
+  body.drag-mode #engineSvg.grabbing{ cursor:grabbing; }
+
+  @media (max-width: 380px){ .btn{ font-size:16px; padding:0 12px; } .seg{ font-size:11.5px; } .chip{ font-size:12px; padding:3px 8px; } }
+  @media (min-width: 900px){
+    body{ font-size:18px; }
+    .sim-grid{ display:grid; grid-template-columns:1.05fr 1fr; gap:14px; align-items:start; }
+    .engine-stage{ height:min(64vh, 600px); }
+    .ts-stage{ height:min(38vh, 360px); }
+    .seg{ font-size:15px; } .seg small{ font-size:12px; }
+  }
+
+  /* ---------- start / finish ---------- */
+  .hero{ background:linear-gradient(135deg, #1F5F82, #2679A6 55%, #3C93BF); color:#fff; padding:28px 18px 46px; text-align:center; }
+  .hero h1{ font-size:28px; margin:6px 0 4px; } .hero p{ margin:0; opacity:0.9; }
+  .hero .logo{ font-size:40px; }
+  .card-page{ max-width:460px; margin:-30px auto 0; padding:0 14px 30px; }
+  .card{ background:#fff; border-radius:18px; padding:18px 16px; box-shadow:0 6px 20px rgba(22,34,42,0.12); }
+  .steps{ display:flex; gap:8px; margin-bottom:14px; }
+  .step{ flex:1; text-align:center; font-size:12.5px; color:var(--soft); }
+  .step b{ display:flex; margin:0 auto 4px; width:28px; height:28px; border-radius:50%; background:var(--t-int); color:var(--c-int); align-items:center; justify-content:center; }
+  .field{ display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
+  .field label{ font-weight:700; font-size:15px; }
+  .field input{ font-family:'IBM Plex Mono',monospace; font-size:22px; padding:12px 14px; border:2px solid var(--line); border-radius:12px; background:#FAFCFD; color:var(--ink); text-transform:uppercase; }
+  .field input:focus{ outline:none; border-color:var(--c-int); background:#fff; }
+  .err{ color:var(--c-pow); font-size:15px; font-weight:600; min-height:1.4em; margin-bottom:6px; }
+  .note{ font-size:14px; color:#164B68; background:var(--t-int); border-radius:10px; padding:10px 12px; margin-bottom:12px; }
+  .finish-page{ max-width:460px; margin:0 auto; padding:24px 14px 40px; }
+  .finish-page h1{ font-size:26px; margin:0 0 6px; } .finish-page p{ color:var(--soft); margin:0 0 14px; }
+  .endcode{ font-family:'IBM Plex Mono',monospace; font-size:clamp(18px, 6.1vw, 28px); font-weight:600; letter-spacing:0.02em; white-space:nowrap; text-align:center;
+    padding:18px 8px; border:3px dashed var(--c-int); border-radius:14px; background:var(--t-int); color:#0F3E57; margin:10px 0 12px; word-break:break-all; }
+  .copied{ color:var(--go); font-weight:700; min-height:1.4em; text-align:center; }
+
+  /* ---- formula page ---- */
+  .eq-wrap{ max-width:900px; margin:0 auto; padding:20px 14px 50px; }
+  .eq-wrap h1{ font-size:24px; margin:0 0 6px; }
+  .eq-wrap .sub{ color:var(--ink-soft); font-size:16px; margin:0 0 18px; }
+  .eq-card{ background:var(--panel); border:1.5px solid var(--line); border-radius:var(--radius); padding:12px 16px 14px; margin-bottom:12px; overflow-x:auto; }
+  .eq-name{ font-size:14px; font-weight:600; color:var(--ink-soft); margin-bottom:6px; }
+  .eq{ font-family:'Times New Roman', Georgia, serif; font-style:italic; font-size:24px; white-space:nowrap; }
+  .fr{ display:inline-flex; flex-direction:column; align-items:center; vertical-align:middle; margin:0 4px; }
+  .fr > span:first-child{ border-bottom:1.5px solid var(--ink); padding:0 4px 2px; }
+  .fr > span:last-child{ padding:2px 4px 0; }
+  .legend{ font-size:16px; color:var(--ink-soft); line-height:1.6; }
+  .legend b{ color:var(--ink); }
+  .calc{ border-top:1.5px dashed var(--line); margin-top:10px; padding-top:8px;
+    font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:14px; line-height:1.75; color:var(--ink-soft); }
+  .calc b{ color:var(--power); font-weight:600; }
+  .calc-h{ font-family:'Space Grotesk', system-ui, sans-serif; font-size:13px; font-weight:600; color:var(--ink-faint); margin-bottom:4px; }
+  .calc sub, .calc sup{ font-size:0.75em; }
+</style>
+</head>
+<body>
+
+<!-- ================= START PAGE ================= -->
+<section id="page-start" class="page">
+  <div class="hero">
+    <div class="logo" aria-hidden="true">⚙️</div>
+    <h1>Four-Stroke Engine</h1>
+    <p>Engine and temperature–entropy diagram</p>
+  </div>
+  <div class="card-page">
+    <div class="card">
+      <div class="steps">
+        <div class="step"><b>1</b>Type your student ID</div>
+        <div class="step"><b>2</b>Type the code on your card</div>
+        <div class="step"><b>3</b>Press Start</div>
+      </div>
+      <div class="note" id="resumeNote" hidden>Welcome back. Your earlier work on this phone was saved. Enter the same ID and card code to continue.</div>
+      <div class="field">
+        <label for="inId">Student ID</label>
+        <input id="inId" autocomplete="off" inputmode="text" maxlength="20">
+      </div>
+      <div class="field">
+        <label for="inCard">Card code</label>
+        <input id="inCard" autocomplete="off" maxlength="9" placeholder="K7P-2QM">
+      </div>
+      <div class="err" id="startErr"></div>
+      <button class="btn btn-primary" id="btnStart">Start ▶</button>
+    </div>
+  </div>
+</section>
+
+<nav class="tabs" role="tablist" id="tabs" hidden>
+  <button class="tab" role="tab" aria-selected="true" data-page="sim"><span class="ic" aria-hidden="true">⚙️</span>Engine</button>
+  <button class="tab" role="tab" aria-selected="false" data-page="eq"><span class="ic" aria-hidden="true">∑</span>Formulas</button>
+  <button class="tab finish" role="tab" aria-selected="false" data-page="finish"><span class="ic" aria-hidden="true">✓</span>Finish</button>
+</nav>
+
+<!-- ================= SIMULATION PAGE ================= -->
+<section id="page-sim" class="page" hidden>
+<div class="wrap">
+  <div class="sim-grid">
+    <div class="panel left-col">
+      <div class="stroke-bar" aria-hidden="true">
+        <div class="seg s0">Intake<small>0–180°</small></div>
+        <div class="seg s1">Compression<small>180–360°</small></div>
+        <div class="seg s2">Power<small>360–540°</small></div>
+        <div class="seg s3">Exhaust<small>540–720°</small></div>
+      </div>
+      <div class="meta-row">
+        <span id="strokeLabel" class="sr-only" aria-live="polite">INTAKE STROKE</span>
+        <span class="angle-pill mono">Crank <span id="angleVal">0°</span></span>
+        <span class="chips"><span class="chip in" id="chipIn">IN closed</span><span class="chip ex" id="chipEx">EX closed</span></span>
+      </div>
+      <svg id="engineSvg" class="engine-stage" role="img" aria-label="Four-stroke engine" viewBox="0 0 420 512" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="metalV" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F5F7F8"/><stop offset="55%" stop-color="#D3D9DB"/><stop offset="100%" stop-color="#AEB7BA"/></linearGradient>
+          <linearGradient id="pistonGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F8FAFB"/><stop offset="45%" stop-color="#DCE1E3"/><stop offset="100%" stop-color="#B7C0C2"/></linearGradient>
+          <linearGradient id="cylGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#EAEDEE"/><stop offset="10%" stop-color="#FCFDFD"/><stop offset="50%" stop-color="#E1E5E6"/><stop offset="90%" stop-color="#FCFDFD"/><stop offset="100%" stop-color="#EAEDEE"/></linearGradient>
+          <radialGradient id="crankGrad" cx="35%" cy="30%" r="75%"><stop offset="0%" stop-color="#F2F4F5"/><stop offset="60%" stop-color="#C7CED0"/><stop offset="100%" stop-color="#959EA1"/></radialGradient>
+          <linearGradient id="rodGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#B7BFC1"/><stop offset="50%" stop-color="#F0F2F3"/><stop offset="100%" stop-color="#A6AFB1"/></linearGradient>
+          <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#16222A" flood-opacity="0.28"/></filter>
+          <marker id="dimArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#8B9A9D"/></marker>
+          <marker id="arrowBlue" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2679A6"/></marker>
+          <marker id="arrowRed" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#C23B3B"/></marker>
+          <marker id="rotArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2679A6"/></marker>
+        </defs>
+
+        <line x1="60" y1="90" x2="140" y2="90" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3 4"/>
+        <line x1="60" y1="328" x2="140" y2="328" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3 4"/>
+        <line x1="60" y1="92" x2="60" y2="326" stroke="var(--ink-faint)" stroke-width="1.5" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"/>
+        <text x="66" y="86" font-size="13" fill="var(--ink-soft)" font-family="'IBM Plex Mono',monospace">TDC</text>
+        <text x="66" y="342" font-size="13" fill="var(--ink-soft)" font-family="'IBM Plex Mono',monospace">BDC</text>
+        <text x="34" y="209" font-size="12" fill="var(--ink-faint)" font-family="'IBM Plex Mono',monospace" text-anchor="middle" transform="rotate(-90 34 209)">stroke 86.0 mm</text>
+
+        <rect x="115" y="40" width="210" height="34" rx="4" fill="url(#metalV)" stroke="var(--ink)" stroke-width="2.5"/>
+        <g id="intakeValve">
+          <text x="152" y="30" font-size="14" font-weight="700" fill="var(--intake)" text-anchor="middle">IN</text>
+          <line x1="152" y1="35" x2="152" y2="50" stroke="var(--intake)" stroke-width="2.5" marker-end="url(#arrowBlue)"/>
+          <rect x="139" y="52" width="26" height="10" rx="2" fill="var(--intake)"/>
+          <line x1="152" y1="52" x2="152" y2="90" stroke="var(--intake)" stroke-width="6" stroke-linecap="round"/>
+        </g>
+        <g id="exhaustValve">
+          <text x="272" y="30" font-size="14" font-weight="700" fill="#C23B3B" text-anchor="middle">EX</text>
+          <line x1="272" y1="50" x2="272" y2="35" stroke="#C23B3B" stroke-width="2.5" marker-end="url(#arrowRed)"/>
+          <rect x="259" y="52" width="26" height="10" rx="2" fill="#C23B3B"/>
+          <line x1="272" y1="52" x2="272" y2="90" stroke="#C23B3B" stroke-width="6" stroke-linecap="round"/>
+        </g>
+        <text x="220" y="30" font-size="12" font-weight="700" fill="var(--ink-soft)" text-anchor="middle" letter-spacing="0.06em">PLUG</text>
+        <g transform="translate(220,60)">
+          <rect x="-4" y="-16" width="8" height="14" rx="1.5" fill="url(#metalV)" stroke="var(--ink)" stroke-width="1.5"/>
+          <line x1="0" y1="-2" x2="0" y2="10" stroke="var(--ink)" stroke-width="2.5"/>
+        </g>
+        <g id="flameBurst">
+          <circle id="flameRing" cx="220" cy="70" r="6" fill="none" stroke="#FF8A3D" stroke-width="3" opacity="0"/>
+          <g id="flameRays" opacity="0">
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+            <line class="ray" x1="220" y1="70" x2="220" y2="60" stroke="#FFB454" stroke-width="2.5" stroke-linecap="round"/>
+          </g>
+          <circle id="flameCore" cx="220" cy="70" r="4" fill="#FFEA9E" opacity="0"/>
+        </g>
+        <rect x="140" y="74" width="160" height="300" fill="url(#cylGrad)" stroke="var(--ink)" stroke-width="2.5"/>
+        <rect id="gasFill" x="143" y="90" width="154" height="30" fill="var(--intake-soft)"/>
+        <rect id="flashOverlay" x="143" y="90" width="154" height="30" fill="#FFF7DB" opacity="0"/>
+        <line x1="140" y1="104" x2="300" y2="104" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3 4"/>
+        <g id="piston" filter="url(#softShadow)">
+          <rect x="144" y="0" width="152" height="46" rx="3" fill="url(#pistonGrad)" stroke="var(--ink)" stroke-width="2.5"/>
+          <line x1="144" y1="14" x2="296" y2="14" stroke="#8E9799" stroke-width="2"/>
+          <line x1="144" y1="26" x2="296" y2="26" stroke="#8E9799" stroke-width="2"/>
+          <circle cx="220" cy="38" r="6" fill="#8E9799" stroke="var(--ink)" stroke-width="1.5"/>
+        </g>
+        <line id="rod" x1="220" y1="0" x2="220" y2="420" stroke="url(#rodGrad)" stroke-width="9" stroke-linecap="round"/>
+        <circle cx="220" cy="440" r="46" fill="url(#crankGrad)" stroke="var(--panel-line)" stroke-width="3" filter="url(#softShadow)"/>
+        <path d="M264,410 A46,46 0 0 1 264,470" fill="none" stroke="var(--intake)" stroke-width="2.5" marker-end="url(#rotArrow)"/>
+        
+        <g id="dragRing" display="none">
+          <circle cx="220" cy="440" r="64" fill="none" stroke="#2679A6" stroke-width="2.5" stroke-dasharray="6 6" opacity="0.7"/>
+          <line x1="220" y1="370" x2="220" y2="382" stroke="#2679A6" stroke-width="3"/>
+          <line x1="220" y1="498" x2="220" y2="510" stroke="#2679A6" stroke-width="3"/>
+          <text x="212" y="372" font-size="12" font-weight="700" fill="#2679A6" text-anchor="end">TDC</text>
+          <text x="212" y="509" font-size="12" font-weight="700" fill="#2679A6" text-anchor="end">BDC</text>
+        </g>
+        <circle cx="220" cy="440" r="7" fill="var(--ink)"/>
+        <circle id="pinHandle" cx="220" cy="394" r="22" fill="#2679A6" fill-opacity="0.25" stroke="#2679A6" stroke-width="3" display="none"/>
+        <circle id="crankPin" cx="220" cy="394" r="9" fill="var(--ink)" stroke="#fff" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <div class="right-col">
+      <div class="panel">
+        <div class="ts-head"><span class="sw"></span>Temperature–Entropy (T–s) diagram</div>
+        <svg id="tsSvg" class="ts-stage" viewBox="0 0 420 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="T–s diagram"></svg>
+        <div class="ts-caption" id="tsCaption"></div>
+      </div>
+
+      <div class="panel controls">
+        <div class="ctrl-block" id="ctrlDrag" hidden>
+          <div class="row-flex" id="dragRow"><div class="hint grow"><span class="big" aria-hidden="true">↻</span><span>Put your finger near the crank and move it round in a circle. The engine turns only when you turn it.</span></div></div>
+        </div>
+        <div class="ctrl-block" id="ctrlSlider" hidden>
+          <div class="ctrl-label row-flex" id="sliderRow"><span class="grow">Move the slider to turn the engine</span></div>
+          <input type="range" id="angleSlider" min="0" max="720" step="1" value="0" aria-label="Crank angle">
+          <div class="ticks"><span>0°</span><span>180°</span><span>360°</span><span>540°</span><span>720°</span></div>
+        </div>
+        <div class="ctrl-block" id="ctrlPlay" hidden>
+          <div class="ctrl-label">Speed <span class="val mono" id="animSpeedVal">120°/s</span></div>
+          <div class="row-flex"><span aria-hidden="true">🐢</span><input type="range" id="animSpeed" class="grow" min="20" max="320" step="5" value="120" aria-label="Animation speed"><span aria-hidden="true">🐇</span></div>
+          <div class="btn-row" style="margin-top:6px;">
+            <button class="btn btn-play" id="btnPlay">▶ Play</button>
+            <button class="btn btn-step" id="btnStep">Next ⏭</button>
+          </div>
+        </div>
+        <div class="btn-row" id="resetRow"><button class="btn btn-reset" id="btnReset">↺ Reset</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ================= FORMULA PAGE ================= -->
+<section id="page-eq" class="page" hidden>
+<div class="eq-wrap">
+  <h1>Governing formulas</h1>
+  <p class="sub">Otto cycle equations used with the four-stroke engine simulation.</p>
+  <div class="eq-card"><div class="eq-name">Symbols</div><div class="legend">
+    <b>B</b> bore · <b>L</b> stroke · <b>V<sub>c</sub></b> clearance volume · <b>γ</b> specific heat ratio ·
+    <b>c<sub>v</sub></b> specific heat at constant volume · <b>q<sub>in</sub></b> heat added per unit mass ·
+    <b>W<sub>net</sub></b> net work per cylinder per cycle · <b>n<sub>cyl</sub></b> number of cylinders · <b>N</b> engine speed (rpm).<br>
+    The factor 120 = 60 s/min × 2 revolutions per power stroke (four-stroke engine).</div></div>
+  <div class="eq-card"><div class="eq-name">Data used in the sample calculations</div><div class="calc" style="border-top:none;margin-top:0;padding-top:0;">r = 10 · T<sub>1</sub> = 320 K · P<sub>1</sub> = 100 kPa · γ = 1.4 · c<sub>v</sub> = 0.718 kJ/kg·K · c<sub>p</sub> = 1.005 kJ/kg·K (R = 0.287 kJ/kg·K)<br>q<sub>in</sub> = 900 kJ/kg · B = L = 86 mm · n<sub>cyl</sub> = 4 · N = 2500 rpm</div></div>
+  <div class="eq-card"><div class="eq-name">Swept volume</div><div class="eq">V<sub>s</sub> = <span class="fr"><span>π</span><span>4</span></span> B<sup>2</sup> L</div><div class="calc"><div class="calc-h">Sample calculation</div>V<sub>s</sub> = (π/4) × (8.6 cm)² × (8.6 cm) = <b>499.6 cm³</b><br>Clearance V<sub>c</sub> = V<sub>s</sub>/(r − 1) = 499.6/9 = 55.5 cm³</div></div>
+  <div class="eq-card"><div class="eq-name">Compression ratio</div><div class="eq">r = <span class="fr"><span>V<sub>BDC</sub></span><span>V<sub>TDC</sub></span></span> = <span class="fr"><span>V<sub>s</sub> + V<sub>c</sub></span><span>V<sub>c</sub></span></span></div><div class="calc"><div class="calc-h">Sample calculation</div>r = 555.1 / 55.5 = <b>10.0</b></div></div>
+  <div class="eq-card"><div class="eq-name">Temperature after compression (1→2)</div><div class="eq">T<sub>2</sub> = T<sub>1</sub> r<sup>γ−1</sup></div><div class="calc"><div class="calc-h">Sample calculation</div>T<sub>2</sub> = 320 × 10<sup>0.4</sup> = <b>803.8 K</b></div></div>
+  <div class="eq-card"><div class="eq-name">Temperature after heat addition (2→3)</div><div class="eq">T<sub>3</sub> = T<sub>2</sub> + <span class="fr"><span>q<sub>in</sub></span><span>c<sub>v</sub></span></span></div><div class="calc"><div class="calc-h">Sample calculation</div>T<sub>3</sub> = 803.8 + 900/0.718 = <b>2057.3 K</b></div></div>
+  <div class="eq-card"><div class="eq-name">Thermal efficiency (air-standard model)</div><div class="eq">η<sub>th</sub> = 1 − <span class="fr"><span>1</span><span>r<sup>γ−1</sup></span></span></div><div class="calc"><div class="calc-h">Sample calculation</div>η<sub>th</sub> = 1 − 1/10<sup>0.4</sup> = 1 − 0.3981 = <b>60.2 %</b></div></div>
+  <div class="eq-card"><div class="eq-name">Indicated mean effective pressure</div><div class="eq">IMEP = <span class="fr"><span>W<sub>net</sub></span><span>V<sub>s</sub></span></span></div><div class="calc"><div class="calc-h">Sample calculation</div>m = P<sub>1</sub>V<sub>1</sub>/(R T<sub>1</sub>) = 6.044×10⁻⁴ kg · w<sub>net</sub> = 0.6019 × 900 = 541.7 kJ/kg<br>W<sub>net</sub> = 0.3274 kJ · IMEP = 0.3274 kJ / 499.6 cm³ = <b>655.4 kPa</b></div></div>
+  <div class="eq-card"><div class="eq-name">Indicated power</div><div class="eq">W&#775;<sub>i</sub> = IMEP · V<sub>s</sub> · n<sub>cyl</sub> · <span class="fr"><span>N</span><span>120</span></span></div><div class="calc"><div class="calc-h">Sample calculation</div>W&#775;<sub>i</sub> = 0.3274 × 4 × 2500/120 = <b>27.3 kW</b></div></div>
+</div>
+</section>
+
+<!-- ================= FINISH PAGE ================= -->
+<section id="page-finish" class="page" hidden>
+  <div class="finish-page">
+    <div id="finishAsk">
+      <h1>Finish the simulation?</h1>
+      <p>Press Finish only when your teacher asks you to. After this you cannot use the simulation again.</p>
+      <div class="btn-row">
+        <button class="btn btn-danger" id="btnFinishYes">✓ Yes, finish</button>
+        <button class="btn btn-ghost" id="btnFinishNo">← Go back</button>
+      </div>
+    </div>
+    <div id="finishDone" hidden>
+      <h1>Thank you 🎉</h1>
+      <p>Copy this code into the survey form.</p>
+      <div class="endcode" id="endCode">----</div>
+      <div class="btn-row"><button class="btn btn-primary" id="btnCopy">📋 Copy code</button></div>
+      <div class="copied" id="copyMsg"></div>
+      <p class="mono" style="font-size:14px;text-align:center;">Student ID <span id="endId"></span> · Card <span id="endCard"></span></p>
+      <div class="btn-row"><button class="btn btn-ghost" id="btnSaveLog" style="width:100%;font-size:15px;min-height:42px;">Save full log file (for teacher)</button></div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* =====================================================================
+   Shared code helpers (identical copy lives in the teacher tool)
+   ===================================================================== */
+var B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+var MODE_NAMES = ['drag', 'slider', 'play'];
+function normCode(s){ return String(s||'').toUpperCase().replace(/[\s\-_.]/g,'').replace(/O/g,'0').replace(/[IL]/g,'1').replace(/U/g,'V'); }
+function cardMode(code){
+  var c = normCode(code); if (c.length !== 6) return -1;
+  var v = []; for (var i=0;i<6;i++){ var x = B32.indexOf(c[i]); if (x<0) return -1; v.push(x); }
+  var w = 0; for (var j=0;j<5;j++) w += v[j]*(j*3+1);
+  var d = (((v[5]-w-5)%32)+32)%32;
+  return d===0 ? 0 : d===9 ? 1 : d===18 ? 2 : -1;
+}
+var END_FIELDS = [['fmt',2],['mode',2],['activeSec',11],['formulaSec',8],['cycles',6],['reversals',7],['pauses',7],['dwell360',8],['dwell540',8],['resets',4],['steps',7]];
+function fnv(str){ var h = 0x811c9dc5; for (var i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+function pad(s,n){ while (s.length<n) s = '0'+s; return s; }
+function encodeEnd(vals){
+  var bits = '';
+  for (var i=0;i<END_FIELDS.length;i++){
+    var k = END_FIELDS[i][0], b = END_FIELDS[i][1], max = (1<<b)-1;
+    var x = Math.max(0, Math.min(max, Math.round(vals[k]||0)));
+    bits += pad(x.toString(2), b);
+  }
+  bits += pad((fnv('E1'+bits) & 0x3FF).toString(2), 10);
+  var s = ''; for (var p=0;p<80;p+=5) s += B32[parseInt(bits.substr(p,5),2)];
+  return s.substr(0,4)+'-'+s.substr(4,4)+'-'+s.substr(8,4)+'-'+s.substr(12,4);
+}
+
+/* =====================================================================
+   Simulation
+   ===================================================================== */
+(function(){
+  var GAMMA=1.4, CV=0.718, P1=100, T1=320, BORE=8.6, STROKE=8.6;
+  var VS = Math.PI/4*BORE*BORE*STROKE, r=10, qin=900;
+  var CRANK_R=1, ROD_L=3.3;
+  var LS_KEY = 'engsim-embodied-v1';
+  var $ = function(id){ return document.getElementById(id); };
+
+  var els = {
+    piston:$('piston'), rod:$('rod'), crankPin:$('crankPin'), pinHandle:$('pinHandle'),
+    gasFill:$('gasFill'), flashOverlay:$('flashOverlay'), flameRing:$('flameRing'), flameCore:$('flameCore'), flameRays:$('flameRays'),
+    intakeValve:$('intakeValve'), exhaustValve:$('exhaustValve'), strokeLabel:$('strokeLabel'), angleVal:$('angleVal'),
+    tsSvg:$('tsSvg'), tsCaption:$('tsCaption'), chipIn:$('chipIn'), chipEx:$('chipEx'), dragRing:$('dragRing'), engineSvg:$('engineSvg'), slider:$('angleSlider'),
+    animSpeed:$('animSpeed'), animSpeedVal:$('animSpeedVal'), btnPlay:$('btnPlay'), btnStep:$('btnStep'), btnReset:$('btnReset')
+  };
+  var rayEls = Array.prototype.slice.call(document.querySelectorAll('#flameRays .ray'));
+
+  // ---------- session state ----------
+  var S = {
+    id:'', card:'', mode:-1, started:false, finished:false, preview:false,
+    theta:0,
+    m:{ activeSec:0, formulaSec:0, forward:0, backward:0, reversals:0, pauses:0, dwell360:0, dwell540:0, resets:0, steps:0 },
+    dir:0, oppAcc:0, endCode:''
+  };
+  var events = [];
+  var t0 = Date.now();
+  var lastMove = Date.now(), inPause = false, currentPage = 'start';
+  var animDegPerSec = 120, playing = false, lastT = null, lastSample = 0;
+
+  function logEv(type, extra){
+    if (S.preview || S.finished) return;
+    var e = { t: Math.round((Date.now()-t0)/100)/10, ev:type, th: Math.round(S.theta) };
+    if (extra) for (var k in extra) e[k] = extra[k];
+    if (events.length < 8000) events.push(e);
+  }
+
+  // ---------- movement accounting ----------
+  function move(delta, source){
+    if (!delta) return;
+    S.theta = (((S.theta + delta) % 720) + 720) % 720;
+    if (!S.preview && !S.finished){
+      if (delta > 0) S.m.forward += delta; else S.m.backward += -delta;
+      var sgn = delta > 0 ? 1 : -1;
+      if (S.dir === 0){ S.dir = sgn; S.oppAcc = 0; }
+      else if (sgn !== S.dir){
+        S.oppAcc += Math.abs(delta);
+        if (S.oppAcc >= 5){ S.m.reversals++; S.dir = sgn; S.oppAcc = 0; logEv('reverse'); }
+      } else { S.oppAcc = 0; }
+      var now = Date.now();
+      if (now - lastSample > 150){ logEv('move', { src: source }); lastSample = now; }
+      lastMove = now; inPause = false;
+    }
+    drawEngine();
+  }
+  function resetPos(){
+    S.theta = 0; S.dir = 0; S.oppAcc = 0;
+    if (!S.preview && !S.finished){ S.m.resets++; logEv('reset'); }
+    lastMove = Date.now(); inPause = false;
+    if (els.slider) els.slider.value = 0;
+    drawEngine();
+  }
+
+  // ---------- kinematics ----------
+  function dNorm(thetaDeg){
+    var th = thetaDeg*Math.PI/180, s0 = CRANK_R+ROD_L;
+    var s = CRANK_R*Math.cos(th) + Math.sqrt(Math.max(0, ROD_L*ROD_L - CRANK_R*CRANK_R*Math.sin(th)*Math.sin(th)));
+    return (s0 - s)/(2*CRANK_R);
+  }
+  var D = {};
+  function volumeAt(t){ return D.Vc + VS*dNorm(t); }
+  function recompute(){
+    var Vc = VS/(r-1), V1 = VS+Vc, T2 = T1*Math.pow(r,GAMMA-1), P2 = P1*Math.pow(r,GAMMA);
+    var T3 = T2 + qin/CV, P3 = P2*(T3/T2), T4 = T3*Math.pow(1/r,GAMMA-1);
+    D = { Vc:Vc, V1:V1, T2:T2, P2:P2, T3:T3, P3:P3, T4:T4, s3: CV*Math.log(T3/T2) };
+  }
+  function pressureAt(th){
+    var t = ((th%720)+720)%720, V = volumeAt(t);
+    if (t < 180) return P1;
+    if (t < 360) return P1*Math.pow(D.V1/V, GAMMA);
+    if (t < 540){ if (t <= 360.0001) return D.P3; return D.P3*Math.pow(D.Vc/V, GAMMA); }
+    return P1;
+  }
+  function tempAt(th){ return T1*(pressureAt(th)*volumeAt(th))/(P1*D.V1); }
+
+  // T-s state, with the 4->1 constant-volume heat rejection now traversed at the start of the exhaust stroke
+  var HEAT_W = 8;
+  function tsStateAt(th){
+    var t = ((th%720)+720)%720;
+    if (t < 180) return { s:0, T:T1, p:'hold' };
+    if (t < 360) return { s:0, T:tempAt(t), p:'12' };
+    if (t <= 360+HEAT_W){ var a = (t-360)/HEAT_W; return { s:a*D.s3, T:D.T2*Math.pow(D.T3/D.T2,a), p:'23' }; }
+    if (t < 540) return { s:D.s3, T:tempAt(t), p:'34' };
+    if (t <= 540+HEAT_W){ var b = (t-540)/HEAT_W; var Tv = D.T4*Math.pow(T1/D.T4,b); return { s:D.s3 + CV*Math.log(Tv/D.T4), T:Tv, p:'41' }; }
+    return { s:0, T:T1, p:'hold' };
+  }
+  var CAPTIONS = {
+    hold:'<b>State 1 held.</b> Gas exchange. Fresh charge in or burnt gas out. This is outside the closed air-standard cycle.',
+    '12':'<b>1→2</b> Isentropic compression. Temperature rises, entropy stays constant.',
+    '23':'<b>2→3</b> Heat added at constant volume (combustion near TDC).',
+    '34':'<b>3→4</b> Isentropic expansion. The gas does work on the piston.',
+    '41':'<b>4→1</b> Heat rejected at constant volume. The model uses this in place of exhaust and intake.'
+  };
+
+  // ---------- drawing: engine ----------
+  var STAGE = { top:90, strokePx:238, pistonH:46 };
+  var lastCaption = '', lastSeg = -1, segEls = document.querySelectorAll('.seg');
+  function drawEngine(){
+    var th = S.theta, d = dNorm(th), pistonTopY = STAGE.top + d*STAGE.strokePx;
+    els.piston.setAttribute('transform', 'translate(0,'+pistonTopY+')');
+    var pistonPinY = pistonTopY + STAGE.pistonH, cx=220, cy=440, R=46, rad = th*Math.PI/180;
+    var pinX = cx + R*Math.sin(rad), pinY = cy - R*Math.cos(rad);
+    els.crankPin.setAttribute('cx', pinX); els.crankPin.setAttribute('cy', pinY);
+    els.pinHandle.setAttribute('cx', pinX); els.pinHandle.setAttribute('cy', pinY);
+    els.rod.setAttribute('x1', cx); els.rod.setAttribute('y1', pistonPinY); els.rod.setAttribute('x2', pinX); els.rod.setAttribute('y2', pinY);
+    var gasH = Math.max(4, pistonTopY-90);
+    els.gasFill.setAttribute('height', gasH); els.flashOverlay.setAttribute('height', gasH);
+    var frac = Math.min(1, Math.max(0, (pressureAt(th)-P1)/(D.P3-P1)));
+    els.gasFill.setAttribute('fill', mixColor(frac));
+    var t = ((th%720)+720)%720;
+    els.intakeValve.setAttribute('opacity', t < 180 ? 1 : 0.28);
+    els.exhaustValve.setAttribute('opacity', t >= 540 ? 1 : 0.28);
+    var inOpen = t < 180, exOpen = t >= 540;
+    els.chipIn.className = 'chip in' + (inOpen ? ' open' : ''); els.chipIn.textContent = 'IN ' + (inOpen ? 'open' : 'closed');
+    els.chipEx.className = 'chip ex' + (exOpen ? ' open' : ''); els.chipEx.textContent = 'EX ' + (exOpen ? 'open' : 'closed');
+    var A=348, B=382;
+    if (t >= A && t <= B){
+      var bp = (t-A)/(B-A), pulse = Math.sin(bp*Math.PI), col = flameColor(bp);
+      els.flameRing.setAttribute('r', (6+bp*48).toFixed(1));
+      els.flameRing.setAttribute('stroke-width', Math.max(0.5, 3-bp*2.3).toFixed(1));
+      els.flameRing.setAttribute('stroke', col);
+      els.flameRing.setAttribute('opacity', (pulse*0.85).toFixed(2));
+      els.flameCore.setAttribute('r', (4+pulse*11).toFixed(1));
+      els.flameCore.setAttribute('opacity', pulse.toFixed(2));
+      els.flameRays.setAttribute('opacity', pulse.toFixed(2));
+      var rayLen = 8+pulse*22;
+      rayEls.forEach(function(ln,i){ var ang=(i*45)*Math.PI/180;
+        ln.setAttribute('x2',(220+Math.sin(ang)*rayLen).toFixed(1)); ln.setAttribute('y2',(70-Math.cos(ang)*rayLen).toFixed(1)); ln.setAttribute('stroke',col); });
+      els.flashOverlay.setAttribute('opacity', (pulse*0.55).toFixed(2));
+    } else {
+      els.flameRing.setAttribute('opacity',0); els.flameCore.setAttribute('opacity',0);
+      els.flameRays.setAttribute('opacity',0); els.flashOverlay.setAttribute('opacity',0);
+    }
+    var label, color;
+    if (t < 180){ label='INTAKE STROKE'; color='var(--intake)'; }
+    else if (t < 360){ label='COMPRESSION STROKE'; color='var(--compress)'; }
+    else if (t < 540){ label='POWER STROKE'; color='var(--power)'; }
+    else { label='EXHAUST STROKE'; color='var(--exhaust)'; }
+    els.strokeLabel.textContent = label;
+    var si = Math.min(3, Math.floor(t/180));
+    if (si !== lastSeg){ for (var q=0;q<segEls.length;q++) segEls[q].classList.toggle('on', q===si); lastSeg = si; }
+    els.angleVal.textContent = Math.round(t) + '°';
+    if (S.mode === 1 && document.activeElement !== els.slider) els.slider.value = Math.round(t);
+    updateTsDot();
+  }
+  function flameColor(p){
+    var c1=[255,224,138], c2=[255,122,58], c3=[184,58,42], a,b,f;
+    if (p<0.5){ a=c1; b=c2; f=p/0.5; } else { a=c2; b=c3; f=(p-0.5)/0.5; }
+    return 'rgb('+Math.round(a[0]+(b[0]-a[0])*f)+','+Math.round(a[1]+(b[1]-a[1])*f)+','+Math.round(a[2]+(b[2]-a[2])*f)+')';
+  }
+  function mixColor(frac){
+    var c1=[220,234,241], c2=[251,229,222], c3=[216,73,47], a,b,f;
+    if (frac<0.5){ a=c1; b=c2; f=frac/0.5; } else { a=c2; b=c3; f=(frac-0.5)/0.5; }
+    return 'rgb('+Math.round(a[0]+(b[0]-a[0])*f)+','+Math.round(a[1]+(b[1]-a[1])*f)+','+Math.round(a[2]+(b[2]-a[2])*f)+')';
+  }
+
+  // ---------- drawing: T-s ----------
+  var TS = { x0:64, y0:200, w:330, h:178 }, tsDotEl, tsGlowEl, tsScales = null;
+  function buildTS(){
+    var svg = els.tsSvg; svg.innerHTML = '';
+    var s3 = D.s3, Smin = -s3*0.12, Smax = s3*1.15, Tmin = T1*0.85, Tmax = D.T3*1.08;
+    function X(s){ return TS.x0 + (s-Smin)/(Smax-Smin)*TS.w; }
+    function Y(Tv){ return TS.y0 - (Tv-Tmin)/(Tmax-Tmin)*TS.h; }
+    tsScales = { X:X, Y:Y };
+    var ns = 'http://www.w3.org/2000/svg';
+    function el(tag, attrs){ var e = document.createElementNS(ns, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+    for (var i=0;i<=4;i++){
+      var gx = X(Smin+(Smax-Smin)*i/4), gy = Y(Tmin+(Tmax-Tmin)*i/4);
+      svg.appendChild(el('line',{x1:gx,y1:TS.y0,x2:gx,y2:TS.y0-TS.h,stroke:'#D4DBDB','stroke-width':1}));
+      svg.appendChild(el('line',{x1:TS.x0,y1:gy,x2:TS.x0+TS.w,y2:gy,stroke:'#D4DBDB','stroke-width':1}));
+    }
+    svg.appendChild(el('line',{x1:TS.x0,y1:TS.y0,x2:TS.x0+TS.w,y2:TS.y0,stroke:'#16222A','stroke-width':2}));
+    svg.appendChild(el('line',{x1:TS.x0,y1:TS.y0,x2:TS.x0,y2:TS.y0-TS.h,stroke:'#16222A','stroke-width':2}));
+    var xl = el('text',{x:TS.x0+TS.w/2,y:TS.y0+30,'text-anchor':'middle','font-size':17,fill:'#56676C'}); xl.textContent='Entropy (s)'; svg.appendChild(xl);
+    var yl = el('text',{x:20,y:TS.y0-TS.h/2,'text-anchor':'middle','font-size':17,fill:'#56676C',transform:'rotate(-90 20 '+(TS.y0-TS.h/2)+')'}); yl.textContent='Temperature (T)'; svg.appendChild(yl);
+    var pts = [[0,T1],[0,D.T2]];
+    for (var a=1;a<=30;a++){ var p=a/30; pts.push([p*s3, D.T2*Math.pow(D.T3/D.T2,p)]); }
+    pts.push([s3, D.T4]);
+    for (var b=1;b<=30;b++){ var q=b/30, Tv=D.T4*Math.pow(T1/D.T4,q); pts.push([s3+CV*Math.log(Tv/D.T4), Tv]); }
+    var path = pts.map(function(p,i){ return (i===0?'M':'L')+X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1); }).join(' ')+' Z';
+    svg.appendChild(el('path',{d:path, fill:'#FBE9E3', opacity:0.5}));
+    svg.appendChild(el('path',{d:path, fill:'none', stroke:'#D8492F','stroke-width':2.5,'stroke-linejoin':'round'}));
+    [{l:'1',s:0,T:T1},{l:'2',s:0,T:D.T2},{l:'3',s:s3,T:D.T3},{l:'4',s:s3,T:D.T4}].forEach(function(sp){
+      var cx = X(sp.s), cy = Y(sp.T);
+      svg.appendChild(el('circle',{cx:cx,cy:cy,r:4.5,fill:'#16222A'}));
+      var tx = el('text',{x:cx+8,y:cy-6,'font-size':18,fill:'#16222A','font-family':"'IBM Plex Mono',monospace",'font-weight':600}); tx.textContent = sp.l; svg.appendChild(tx);
+    });
+    tsGlowEl = el('circle',{r:16, fill:'#2679A6', opacity:0.18});
+    svg.appendChild(tsGlowEl);
+    tsDotEl = el('circle',{r:9, fill:'#2679A6', stroke:'#fff','stroke-width':3});
+    svg.appendChild(tsDotEl);
+  }
+  function updateTsDot(){
+    if (!tsScales || !tsDotEl) return;
+    var st = tsStateAt(S.theta);
+    tsDotEl.setAttribute('cx', tsScales.X(st.s)); tsDotEl.setAttribute('cy', tsScales.Y(st.T));
+    tsGlowEl.setAttribute('cx', tsScales.X(st.s)); tsGlowEl.setAttribute('cy', tsScales.Y(st.T));
+    var t = ((S.theta%720)+720)%720;
+    tsDotEl.setAttribute('fill', (t>=348 && t<=382) ? flameColor((t-348)/34) : '#2679A6');
+    if (st.p !== lastCaption){ els.tsCaption.innerHTML = CAPTIONS[st.p]; els.tsCaption.className = 'ts-caption p' + st.p; lastCaption = st.p; }
+  }
+
+  // ---------- mode 0: circular drag on the crank ----------
+  var dragging = false, lastAng = 0;
+  function svgPoint(evt){
+    var pt = els.engineSvg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+    var m = els.engineSvg.getScreenCTM(); if (!m) return null;
+    return pt.matrixTransform(m.inverse());
+  }
+  function angleOf(p){ return Math.atan2(p.x-220, -(p.y-440))*180/Math.PI; }
+  els.engineSvg.addEventListener('pointerdown', function(e){
+    if (S.mode !== 0 || S.finished) return;
+    var p = svgPoint(e); if (!p) return;
+    var dist = Math.hypot(p.x-220, p.y-440);
+    if (dist < 14 || dist > 230) return;   // start anywhere around the crank
+    dragging = true; lastAng = angleOf(p);
+    els.engineSvg.classList.add('grabbing');
+    try { els.engineSvg.setPointerCapture(e.pointerId); } catch(err){}
+    els.pinHandle.classList.remove('pulse');
+    logEv('dragStart'); e.preventDefault();
+  });
+  els.engineSvg.addEventListener('pointermove', function(e){
+    if (!dragging) return;
+    var p = svgPoint(e); if (!p) return;
+    if (Math.hypot(p.x-220, p.y-440) < 12) return;
+    var a = angleOf(p), dlt = a - lastAng;
+    if (dlt > 180) dlt -= 360; if (dlt < -180) dlt += 360;
+    lastAng = a;
+    move(dlt, 'drag'); e.preventDefault();
+  });
+  function endDrag(){ if (dragging){ dragging = false; els.engineSvg.classList.remove('grabbing'); logEv('dragEnd'); } }
+  els.engineSvg.addEventListener('pointerup', endDrag);
+  els.engineSvg.addEventListener('pointercancel', endDrag);
+
+  // ---------- mode 1: linear slider ----------
+  var sliderPrev = 0;
+  els.slider.addEventListener('pointerdown', function(){ logEv('sliderStart'); });
+  els.slider.addEventListener('input', function(){
+    if (S.mode !== 1 || S.finished) return;
+    var v = parseFloat(els.slider.value), dlt = v - sliderPrev; sliderPrev = v;
+    move(dlt, 'slider');
+  });
+
+  // ---------- mode 2: play / step ----------
+  els.animSpeed.addEventListener('input', function(e){
+    animDegPerSec = parseFloat(e.target.value); els.animSpeedVal.textContent = animDegPerSec+'°/s'; logEv('speed', { v: animDegPerSec });
+  });
+  function setPlaying(on){
+    playing = on; els.btnPlay.textContent = on ? '⏸ Pause' : '▶ Play'; els.btnPlay.classList.toggle('is-playing', on); lastT = null;
+    if (on) requestAnimationFrame(tick);
+  }
+  els.btnPlay.addEventListener('click', function(){ if (S.mode!==2 || S.finished) return; setPlaying(!playing); logEv(playing?'play':'pause'); });
+  els.btnStep.addEventListener('click', function(){
+    if (S.mode!==2 || S.finished) return;
+    setPlaying(false);
+    var target = (Math.floor(S.theta/180)+1)*180, dlt = target - S.theta;
+    if (!S.preview) S.m.steps++;
+    logEv('step'); move(dlt, 'step');
+  });
+  function tick(ts){
+    if (!playing) return;
+    if (lastT === null) lastT = ts;
+    var dt = Math.min(0.1, (ts-lastT)/1000); lastT = ts;
+    move(animDegPerSec*dt, 'play');
+    requestAnimationFrame(tick);
+  }
+  els.btnReset.addEventListener('click', function(){ if (S.finished) return; if (playing) setPlaying(false); resetPos(); sliderPrev = 0; });
+
+  // ---------- timers: active time, dwell, pauses ----------
+  var lastTimer = Date.now();
+  setInterval(function(){
+    var now = Date.now(), dt = (now - lastTimer)/1000; lastTimer = now;
+    if (!S.started || S.finished || S.preview || document.hidden) return;
+    if (dt > 2) dt = 0;   // phone was asleep
+    if (currentPage === 'sim'){
+      S.m.activeSec += dt;
+      var t = S.theta;
+      if (t >= 340 && t <= 380) S.m.dwell360 += dt;
+      if (t >= 520 && t <= 560) S.m.dwell540 += dt;
+      if (!inPause && now - lastMove >= 2000){ S.m.pauses++; inPause = true; logEv('pause2s'); }
+    } else if (currentPage === 'eq'){
+      S.m.formulaSec += dt;
+    }
+  }, 100);
+  setInterval(saveState, 3000);
+  document.addEventListener('visibilitychange', function(){ logEv(document.hidden ? 'hidden' : 'visible'); saveState(); });
+
+  // ---------- persistence ----------
+  function saveState(){
+    if (!S.started || S.preview) return;
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ S:S, events:events.slice(-6000), t0:t0 })); } catch(e){}
+  }
+  function loadState(){
+    try { var raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch(e){ return null; }
+  }
+
+  // ---------- pages ----------
+  var tabs = document.querySelectorAll('.tab');
+  var pages = { start:$('page-start'), sim:$('page-sim'), eq:$('page-eq'), finish:$('page-finish') };
+  function show(name){
+    if (S.finished && name !== 'finish') name = 'finish';
+    if (name !== 'sim' && playing) setPlaying(false);
+    for (var k in pages) pages[k].hidden = (k !== name);
+    tabs.forEach(function(t){ t.setAttribute('aria-selected', String(t.dataset.page === name)); });
+    if (name === 'finish' && !S.finished){ $('finishAsk').hidden = false; $('finishDone').hidden = true; }
+    if (currentPage !== name) logEv('page', { p: name });
+    currentPage = name; lastMove = Date.now(); inPause = false;
+    window.scrollTo(0,0);
+  }
+  tabs.forEach(function(t){ t.addEventListener('click', function(){ show(t.dataset.page); }); });
+
+  function applyMode(){
+    document.body.classList.toggle('drag-mode', S.mode === 0);
+    $('ctrlDrag').hidden = S.mode !== 0;
+    $('ctrlSlider').hidden = S.mode !== 1;
+    $('ctrlPlay').hidden = S.mode !== 2;
+    els.pinHandle.setAttribute('display', S.mode === 0 ? 'inline' : 'none');
+    els.dragRing.setAttribute('display', S.mode === 0 ? 'inline' : 'none');
+    if (S.mode === 0 && !S.m.forward && !S.m.backward) els.pinHandle.classList.add('pulse');
+    // put Reset inside the control row of each version to save height on small phones
+    els.btnReset.classList.toggle('small', S.mode !== 2);
+    if (S.mode === 0) $('dragRow').appendChild(els.btnReset);
+    else if (S.mode === 1) $('sliderRow').appendChild(els.btnReset);
+    else els.btnPlay.parentNode.appendChild(els.btnReset);
+    els.slider.value = Math.round(S.theta); sliderPrev = Math.round(S.theta);
+  }
+  function enterSim(){
+    S.started = true; applyMode();
+    $('tabs').hidden = false;
+    show(S.finished ? 'finish' : 'sim');
+    drawEngine();
+  }
+
+  ['inId','inCard'].forEach(function(id){ $(id).addEventListener('keydown', function(e){ if (e.key === 'Enter') $('btnStart').click(); }); });
+  $('btnStart').addEventListener('click', function(){
+    var id = $('inId').value.trim().toUpperCase(), card = normCode($('inCard').value), mode = cardMode(card);
+    if (!id){ $('startErr').textContent = 'Please enter your student ID.'; return; }
+    if (mode < 0){ $('startErr').textContent = 'This card code is not valid. Check it and type it again.'; return; }
+    var saved = loadState();
+    if (saved && saved.S && saved.S.id === id && saved.S.card === card){
+      S = saved.S; events = saved.events || []; t0 = saved.t0 || Date.now();
+      logEv('resume');
+      if (S.finished){ enterSim(); showFinishCode(); return; }
+    } else {
+      S.id = id; S.card = card; S.mode = mode; t0 = Date.now(); events = [];
+      logEv('start', { mode: MODE_NAMES[mode] });
+    }
+    enterSim(); saveState();
+  });
+
+  function showFinishCode(){
+    $('finishAsk').hidden = true; $('finishDone').hidden = false;
+    $('endCode').textContent = S.endCode;
+    $('endId').textContent = S.id; $('endCard').textContent = S.card.substr(0,3)+'-'+S.card.substr(3);
+  }
+  $('btnFinishNo').addEventListener('click', function(){ show('sim'); });
+  $('btnFinishYes').addEventListener('click', function(){
+    logEv('finish');
+    var m = S.m;
+    S.endCode = encodeEnd({ fmt:1, mode:S.mode, activeSec:m.activeSec, formulaSec:m.formulaSec,
+      cycles: Math.floor(m.forward/720), reversals:m.reversals, pauses:m.pauses,
+      dwell360:m.dwell360, dwell540:m.dwell540, resets:m.resets, steps:m.steps });
+    S.finished = true; saveState(); showFinishCode();
+  });
+  $('btnCopy').addEventListener('click', function(){
+    var code = S.endCode, msg = $('copyMsg');
+    function done(){ msg.textContent = 'Copied. Now paste it into the survey.'; logEv('copy'); }
+    function fallback(){ var ta = document.createElement('textarea'); ta.value = code; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ msg.textContent = 'Please write the code down.'; } ta.remove(); }
+    try { if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(code).then(done, fallback); else fallback(); } catch(e){ fallback(); }
+  });
+  $('btnSaveLog').addEventListener('click', function(){
+    var data = { studentId:S.id, card:S.card, mode:MODE_NAMES[S.mode], endCode:S.endCode, metrics:S.m, startedAt:new Date(t0).toISOString(), events:events };
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type:'application/json' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'enginelog_' + S.id.replace(/[^A-Z0-9]/g,'') + '.json';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+
+  // ---------- init ----------
+  recompute(); buildTS(); drawEngine();
+  var saved0 = loadState();
+  if (saved0 && saved0.S && saved0.S.started) $('resumeNote').hidden = false;
+
+  // Teacher preview without logging, e.g. ?preview=drag  (also ?theta=545 to set the crank angle)
+  var q = {}; location.search.replace(/^\?/,'').split('&').forEach(function(kv){ if (!kv) return; var p = kv.split('='); q[decodeURIComponent(p[0])] = decodeURIComponent(p[1]||''); });
+  if (q.preview && MODE_NAMES.indexOf(q.preview) >= 0){
+    S.preview = true; S.mode = MODE_NAMES.indexOf(q.preview);
+    if (q.theta) S.theta = ((parseFloat(q.theta)%720)+720)%720;
+    enterSim();
+  }
+})();
+</script>
+</body>
+</html>
